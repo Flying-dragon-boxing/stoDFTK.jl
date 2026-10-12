@@ -62,7 +62,7 @@ result = stochastic_scf(basis; n_samples=64, backend=ChebyshevFOE(batch_size=32)
 
 大波函数、递推工作数组和密度保留在设备上；Chebyshev 系数、迹矩和化学势求解在 CPU 上。探针先按可复现种子在 CPU 生成，再传到设备。当前仅支持 Float64 / ComplexF64。
 
-原生 Libxc GPU 泛函需要兼容的 CUDA 工具包和 Libxc GPU artifact。本次本地 CUDA 13.4 被 LibxcCudaExt 明确拒绝，`Libxc.has_cuda()` 为 false；此外当前 Libxc_GPU_jll 不会为 `local="true"` 选择 GPU artifact。因而普通 `functionals=PBE()` 的 He GPU SCF 无法在这个环境中运行。这是上游环境限制，不能把解析势的 CUDA 测试当成所有 XC 泛函已通过。
+原生 Libxc GPU 泛函需要可用的 Libxc GPU artifact。本次为避免下载超时而设置 `local="true"`，使用系统 CUDA 13.4；当前 Libxc_GPU_jll 的平台选择逻辑在这个设置下直接拒绝所有 GPU artifact，导致 `Libxc.has_cuda()` 为 false，普通 `functionals=PBE()` 的 He GPU SCF 在 DFTK 的可用性断言处失败。LibxcCudaExt 随后因 GPU 包不可用且运行时高于 13.3 发出版本警告；警告本身不是加载后的 ABI 或内核失败。安装的预编译包最高标记 CUDA 13.3，但同一 CUDA 主版本内的选择逻辑允许使用较早的构建。CUDA 13.4 下实际加载并运行 GPU Libxc 尚未验证，不能据此认定其必然不兼容。
 
 可显式使用 DFTK 支持的内置 PBE 泛函：
 

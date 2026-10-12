@@ -94,8 +94,9 @@ Simple / Kerker / Dielectric density mixing.
 
 CUDA uses a DFTK GPU basis and supports host-staged probe MPI. CUDA is an
 optional dependency of the calling project. Native Libxc GPU functionals depend
-on the installed CUDA/Libxc combination; the tested local CUDA 13.4 setup cannot
-run them. DFTK built-in functionals evaluate XC on CPU with a GPU basis.
+on GPU artifact availability; the tested `local=true` CUDA 13.4 setup disables
+Libxc GPU artifacts, so native GPU XC remains unvalidated. DFTK built-in
+functionals evaluate XC on CPU with a GPU basis.
 GPU k-point MPI, simultaneous k-point/probe MPI and AMDGPU are not validated
 or supported here. See [backend setup and limits](docs/parallelization.md).
 

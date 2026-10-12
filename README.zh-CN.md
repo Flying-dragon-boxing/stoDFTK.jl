@@ -74,7 +74,7 @@ julia --project=. examples/helium_scf.jl --complete
 
 ## 当前范围
 
-支持 Float64 / ComplexF64、CPU 线程与探针批处理、CPU 的 k 点或探针 MPI、CUDA 与经 CPU 暂存的 GPU 探针 MPI。也支持多个 k 点、非自旋极化 / spinless / 共线自旋、LDA / GGA、调用方提供的模守恒赝势，以及 Simple / Kerker / Dielectric 混合。原生 Libxc GPU 泛函受 CUDA/Libxc 组合限制，本机 CUDA 13.4 不能运行；DFTK 内置泛函可在 GPU basis 上经 CPU 计算交换关联。GPU 的 k 点 MPI、k 点 × 探针二维 MPI、AMD 路径暂不支持。配置和测试记录见 [并行说明](docs/parallelization.md)。
+支持 Float64 / ComplexF64、CPU 线程与探针批处理、CPU 的 k 点或探针 MPI、CUDA 与经 CPU 暂存的 GPU 探针 MPI。也支持多个 k 点、非自旋极化 / spinless / 共线自旋、LDA / GGA、调用方提供的模守恒赝势，以及 Simple / Kerker / Dielectric 混合。本次使用本地 CUDA 13.4 的 `local=true` 配置禁用了 Libxc GPU 预编译包，原生 GPU 交换关联尚未验证；DFTK 内置泛函可在 GPU basis 上经 CPU 计算交换关联。GPU 的 k 点 MPI、k 点 × 探针二维 MPI、AMD 路径暂不支持。配置和测试记录见 [并行说明](docs/parallelization.md)。
 
 暂不支持零温、混合确定性子空间、杂化泛函、需要动能密度的 meta-GGA、力或分子动力学。
 

@@ -52,7 +52,7 @@ MPI 与串行比较的密度、化学势及自由能容差为 `1e-7`，电子数
 
 CUDA 三种采样的密度与 CPU 的 L² 差约 `1e-16`，自由能差不超过 `5.6e-17 Ha`。非线性随机 SCF 在 13 轮收敛，残差 `8.1066894e-8`，CPU/GPU 自由能差 `2.2e-16 Ha`。
 
-**原生 Libxc GPU PBE 未通过。** 本地 CUDA 13.4 被当前 LibxcCudaExt 拒绝，普通 `functionals=PBE()` 的 He GPU SCF 在构建 Hamiltonian 时失败。另行显式选择 DftFunctionals 内置 PBE 后，交换关联在 CPU 求值，波函数、Hartree、FFT 和密度使用 GPU。这条混合路径的 19 维 He 完整基 SCF 在 24 轮收敛，残差 `7.4346884e-8`，与对应 CPU SCF 自由能差 `1.8e-15 Ha`；CPU 内置 PBE 与 CPU Libxc PBE 也在 `1e-6` 容差内一致。它不能替代原生 GPU Libxc 的验证。
+**原生 Libxc GPU PBE 未通过。** 直接原因是本次 `local="true"` 配置触发 Libxc_GPU_jll 的平台选择规则，未选择 GPU artifact；`Libxc.has_cuda()` 为 false，普通 `functionals=PBE()` 的 He GPU SCF 在构建 Hamiltonian 时失败。CUDA 13.4 的警告在包不可用后发出，尚未实际加载 GPU Libxc 来验证二进制兼容性。另行显式选择 DftFunctionals 内置 PBE 后，交换关联在 CPU 求值，波函数、Hartree、FFT 和密度使用 GPU。这条混合路径的 19 维 He 完整基 SCF 在 24 轮收敛，残差 `7.4346884e-8`，与对应 CPU SCF 自由能差 `1.8e-15 Ha`；CPU 内置 PBE 与 CPU Libxc PBE 也在 `1e-6` 容差内一致。它不能替代原生 GPU Libxc 的验证。
 
 配置、可选依赖和启动入口见 [并行说明](parallelization.md)。GPU 的 k 点 MPI 和 k 点 × 探针二维 MPI 尚不支持。
 
