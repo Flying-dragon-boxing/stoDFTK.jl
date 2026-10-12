@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/lanczos]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Julia ${{ matrix.julia-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ['1.10', '1']
+    env:
+      JULIA_CUDA_USE_COMPAT: 'false'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.julia-version }}
+      - name: Instantiate and test
+        run: julia --color=yes --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'

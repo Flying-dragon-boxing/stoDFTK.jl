@@ -1,0 +1,35 @@
+# Local caches and generated binary results
+.agents/
+.codex/
+.aws/
+*.jld2
+*.jld2.part
+*.xlsx
+*.png
+*.pdf
+*.pyc
+__pycache__/
+.DS_Store
+/Manifest.toml
+*.upf
+*.UPF
+*.hgh
+
+# Original experiments are versioned on research/original, not shipped in the package.
+/SLQ/
+/jul/
+/submit/
+/inputs/
+/logs/
+/abacus_like_bound_sensitivity/
+/al50ev_fixed_h_compare/
+/electron_count_mu/
+/fixed_h_order_convergence/
+/lfop_random_sensitivity/
+/si2_20ev_fixed_h/
+/spectral_bound_sensitivity/
+/spectral_measure_ritz/
+/fixed_h_common.jl
+/fixed_h_experiment_summary.md
+/abacus_slq_working_diff.patch
+/docs/abacus_work_report.md
