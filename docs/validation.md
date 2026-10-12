@@ -1,6 +1,6 @@
 # 数值验证
 
-环境：Julia 1.13.1，DFTK 0.7.26，Float64 / ComplexF64。CPU 使用 Julia 1 / 4 线程、OpenBLAS / MKL，以及 2 / 3 个 MPICH 进程；GPU 为 RTX 4060 Laptop（8 GiB），CUDA.jl 6.3.1，本地 CUDA 13.4，驱动 615.78.08。GPU 测试禁用标量回退。
+环境：Julia 1.13.1，DFTK 0.7.26，Float64 / ComplexF64。CPU 使用 Julia 1 / 4 线程、OpenBLAS / MKL，以及 2 / 3 个 MPICH 进程；GPU 为 RTX 4060 Laptop（8 GiB），CUDA.jl 6.3.1，驱动 615.78.08。先使用本地 CUDA 13.4 验证基础算符和 CPU XC 混合路径，随后通过无代理镜像下载 CUDA 13.3 预编译包，验证原生 GPU Libxc。GPU 测试禁用标量回退。
 
 公开版本不包含赝势数据文件。测试使用一维解析周期模型、合成非局域投影矩阵，以及全电子 He 原子。He 仅用 Γ 点、`Ecut=1.5 Ha`，平面波维数为 19；完整基只用于这些小体系。
 
@@ -44,7 +44,8 @@ He：平面波维数 19，Chebyshev `degree=100`，完整基，阻尼 0.5，密�
 | 验证 | 检查数 | 结果 |
 |---|---:|---|
 | CPU MPI，2 / 3 进程 | 每进程 77 | k 点分配、探针分配、SCF 均通过 |
-| 单 GPU CUDA | 29 | 算符、三种采样、密度、非线性 SCF、He/PBE 混合路径通过 |
+| CUDA 13.4，CPU XC | 29 | 算符、三种采样、密度、非线性 SCF、He/PBE 混合路径通过 |
+| CUDA 13.3，原生 GPU Libxc | 27 | 同类检查及原生 GPU He/PBE SCF，通过 |
 | GPU 探针 MPI，2 进程 | 每进程 11 | 包括零探针进程、全局密度/能量、SCF，通过 |
 | AMDGPU | 可用性检查 | `functional()=false`，缺少 HIP、rocBLAS、rocSOLVER、rocFFT |
 
@@ -52,7 +53,11 @@ MPI 与串行比较的密度、化学势及自由能容差为 `1e-7`，电子数
 
 CUDA 三种采样的密度与 CPU 的 L² 差约 `1e-16`，自由能差不超过 `5.6e-17 Ha`。非线性随机 SCF 在 13 轮收敛，残差 `8.1066894e-8`，CPU/GPU 自由能差 `2.2e-16 Ha`。
 
-**原生 Libxc GPU PBE 未通过。** 直接原因是本次 `local="true"` 配置触发 Libxc_GPU_jll 的平台选择规则，未选择 GPU artifact；`Libxc.has_cuda()` 为 false，普通 `functionals=PBE()` 的 He GPU SCF 在构建 Hamiltonian 时失败。CUDA 13.4 的警告在包不可用后发出，尚未实际加载 GPU Libxc 来验证二进制兼容性。另行显式选择 DftFunctionals 内置 PBE 后，交换关联在 CPU 求值，波函数、Hartree、FFT 和密度使用 GPU。这条混合路径的 19 维 He 完整基 SCF 在 24 轮收敛，残差 `7.4346884e-8`，与对应 CPU SCF 自由能差 `1.8e-15 Ha`；CPU 内置 PBE 与 CPU Libxc PBE 也在 `1e-6` 容差内一致。它不能替代原生 GPU Libxc 的验证。
+**最初本地 CUDA 13.4 的 Libxc GPU 加载失败。** 直接原因是 `local="true"` 配置触发 Libxc_GPU_jll 的平台选择规则，未选择 GPU artifact；`Libxc.has_cuda()` 为 false，普通 `functionals=PBE()` 的 He GPU SCF 在构建 Hamiltonian 时失败。CUDA 13.4 的警告在包不可用后发出，尚未实际加载 GPU Libxc 来验证其与 CUDA 13.4 的二进制兼容性。另行显式选择 DftFunctionals 内置 PBE 后，交换关联在 CPU 求值，波函数、Hartree、FFT 和密度使用 GPU。这条混合路径的 19 维 He 完整基 SCF 在 24 轮收敛，残差 `7.4346884e-8`，与对应 CPU SCF 自由能差 `1.8e-15 Ha`；CPU 内置 PBE 与 CPU Libxc PBE 也在 `1e-6` 容差内一致。
+
+**清除下载代理后，原生 GPU Libxc PBE 验证通过。** 北大镜像直连完成 CUDA artifact 下载并校验内容哈希；改用 `local="false"`、CUDA runtime 13.3.0 / compiler 13.3.73 后，`Libxc.has_cuda()` 为 true。原生 GPU He/PBE 的 19 维完整基 SCF 在 24 轮收敛，残差 `7.434688411825148e-8`，与 CPU 自由能差 `3.552713678800501e-15 Ha`。
+
+DFTK 自带 CUDA 预编译示例在 GPU 非局域投影算符中混用 CPU 矩阵和 GPU 数组而报错。本次仅禁用预编译演练，实际 JIT、GPU Libxc 和小体系计算正常执行；GPU 赝势没有完成数值验证。没有修改依赖包代码或替换 GPU XC 为 CPU 求值来通过原生 GPU 检查。
 
 配置、可选依赖和启动入口见 [并行说明](parallelization.md)。GPU 的 k 点 MPI 和 k 点 × 探针二维 MPI 尚不支持。
 

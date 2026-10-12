@@ -93,10 +93,10 @@ norm-conserving pseudopotential Hamiltonians supplied by the caller, and
 Simple / Kerker / Dielectric density mixing.
 
 CUDA uses a DFTK GPU basis and supports host-staged probe MPI. CUDA is an
-optional dependency of the calling project. Native Libxc GPU functionals depend
-on GPU artifact availability; the tested `local=true` CUDA 13.4 setup disables
-Libxc GPU artifacts, so native GPU XC remains unvalidated. DFTK built-in
-functionals evaluate XC on CPU with a GPU basis.
+optional dependency of the calling project. Native Libxc PBE GPU SCF is
+validated with CUDA 13.3 artifacts. The initial `local=true` CUDA 13.4 setup
+disabled Libxc GPU artifacts; direct mirror downloads resolved the installation
+problem. DFTK built-in functionals can also evaluate XC on CPU with a GPU basis.
 GPU k-point MPI, simultaneous k-point/probe MPI and AMDGPU are not validated
 or supported here. See [backend setup and limits](docs/parallelization.md).
 

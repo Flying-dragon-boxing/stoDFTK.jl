@@ -84,7 +84,33 @@ julia --project=test/gpu test/gpu/runtests.jl
 julia --project=test/gpu test/run_mpi.jl 2 test/gpu/mpi.jl
 ```
 
-如果已安装本地 CUDA，可在 **test/gpu/LocalPreferences.toml** 写入以下配置后重启 Julia；文件不会提交到仓库：
+本次下载通过北大 Julia 镜像直连完成。下载子进程清除大写和小写代理变量，其他进程的代理设置不变：
+
+```sh
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+    -u http_proxy -u https_proxy -u all_proxy \
+    JULIA_PKG_SERVER=https://mirrors.pku.edu.cn/julia \
+    julia --project=test/gpu -e 'using Pkg; Pkg.instantiate()'
+```
+
+`JULIA_PKG_SERVER` 指定包和 artifact 的镜像服务。Git URL 安装等请求仍可能访问原始站点，见 [Pkg 的下载说明](https://pkgdocs.julialang.org/v1.10/managing-packages/#Pkg-client/server)。本次镜像的注册表接口和 CUDA artifact 均已实测可用；约 988 MiB 的续传在取消代理后约 11 秒完成，完整内容哈希也已核对。
+
+原生 GPU Libxc 的下载和加载检查使用 CUDA 13.3 预编译包，`Libxc.has_cuda()` 为 true。在 **test/gpu/LocalPreferences.toml** 中配置后重启 Julia；此文件不会提交到仓库：
+
+```toml
+[CUDA_Runtime_jll]
+version = "13.3"
+local = "false"
+[CUDA_Compiler_jll]
+version = "13.3"
+local = "false"
+[PrecompileTools]
+precompile_workloads = false
+```
+
+本机 DFTK 0.7.26 / CUDA.jl 6.3.1 的上游 CUDA 预编译示例在非局域投影矩阵的 CPU/GPU 混合乘法处失败。本测试环境禁用预编译演练来绕过该示例，实际 JIT 编译和小体系计算仍执行。GPU 赝势路径尚未验证，当前 GPU 数值测试使用解析势与全电子 He。
+
+也可使用已安装的本地 CUDA；此设置在当前 Libxc_GPU_jll 中会禁用 GPU Libxc artifact：
 
 ```toml
 [CUDA_Runtime_jll]
