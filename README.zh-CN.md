@@ -17,6 +17,7 @@ julia --project=. examples/helium_scf.jl
 
 ```julia
 using Pkg
+Pkg.add(name="DFTK", version="0.7")
 Pkg.develop(path="/path/to/stoDFTK.jl")
 using DFTK, stoDFTK
 ```

@@ -16,6 +16,7 @@ the Julia General registry; install directly from GitHub:
 
 ```julia
 using Pkg
+Pkg.add(name="DFTK", version="0.7")  # Direct dependency of the calling project.
 Pkg.add(url="https://github.com/Flying-dragon-boxing/stoDFTK.jl", rev="main")
 using DFTK, stoDFTK
 ```
