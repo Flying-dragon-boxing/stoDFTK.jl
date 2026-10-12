@@ -11,20 +11,23 @@ end
 function estimate_count(basis, caches, probes, μ)
     temperature = basis.model.temperature
     occmax = DFTK.filled_occupation(basis.model)
-    sum(basis.kweights[ik] * probes.weights[ik] *
+    local_count = sum(basis.kweights[ik] * probes.weights[ik] *
         sum(count_samples(cache, μ, temperature, occmax)) for (ik, cache) in enumerate(caches))
+    collective(local_count, +, trace_comm(basis, probes))
 end
 
 function solve_chemical_potential(basis, caches, probes; tol_n_elec, maxiter=100)
     target = basis.model.n_electrons
     occmax = DFTK.filled_occupation(basis.model)
-    capacity = occmax * sum(basis.kweights[ik] * probes.weights[ik] * sum(abs2, χ)
+    local_capacity = occmax * sum(basis.kweights[ik] * probes.weights[ik] * sum(abs2, χ)
                             for (ik, χ) in enumerate(probes.vectors))
+    comm = trace_comm(basis, probes)
+    capacity = collective(local_capacity, +, comm)
     0 < target < capacity || throw(ArgumentError(
         "electron target $target must lie strictly between 0 and basis capacity $capacity; increase Ecut"))
     temperature = basis.model.temperature
-    lo = minimum(cache -> cache.bounds[1], caches) - 8temperature
-    hi = maximum(cache -> cache.bounds[2], caches) + 8temperature
+    lo = collective(minimum(cache -> cache.bounds[1], caches), min, comm) - 8temperature
+    hi = collective(maximum(cache -> cache.bounds[2], caches), max, comm) + 8temperature
     count(μ) = estimate_count(basis, caches, probes, μ)
     nlo, nhi = count(lo), count(hi)
     # Bound expansion is finite even for invalid probes or an inadequate basis.
@@ -56,11 +59,14 @@ function solve_chemical_potential(basis, caches, probes; tol_n_elec, maxiter=100
     error("chemical-potential solve did not meet electron-count tolerance $tol_n_elec")
 end
 
-function stochastic_energy(basis, ψ, occupation, ρ, entropy_energy)
+function stochastic_energy(basis, ψ, occupation, ρ, entropy_energy; probe_comm=MPI.COMM_SELF)
     names, values = String[], Float64[]
     for (term_type, term) in zip(basis.model.term_types, basis.terms)
         name = string(nameof(typeof(term_type)))
         value = name == "Entropy" ? entropy_energy : DFTK.energy(term, basis, ψ, occupation; ρ)
+        if name in ("Kinetic", "AtomicNonlocal")
+            value = collective(value, +, probe_comm)
+        end
         push!(names, name)
         push!(values, value)
     end
@@ -75,7 +81,8 @@ end
 """
     stochastic_density(basis, ham; backend=ChebyshevFOE(), probes=nothing,
                        n_samples=32, seed=0, sampling=:phase,
-                       μ=nothing, spectral_bounds=nothing, tol_n_elec=1e-8)
+                       μ=nothing, spectral_bounds=nothing, tol_n_elec=1e-8,
+                       probe_comm=MPI.COMM_SELF)
 
 Construct `ρ = Σ_k w_k ⟨|sqrt(f(H_k))χ_k|²⟩` using DFTK's FFT normalization,
 spin channels, k-point weights and density symmetrization. Unless `μ` is given,
@@ -90,11 +97,12 @@ entropy is a separate trace approximation. `ψ` are not KS eigenstates.
 function stochastic_density(basis, ham; backend::AbstractFOE=ChebyshevFOE(),
                              probes=nothing, n_samples::Int=32, seed::Int=0,
                              sampling::Symbol=:phase, μ=nothing,
-                             spectral_bounds=nothing, tol_n_elec::Real=1e-8)
+                             spectral_bounds=nothing, tol_n_elec::Real=1e-8,
+                             probe_comm=MPI.COMM_SELF)
     validate_basis(basis)
     isfinite(tol_n_elec) && tol_n_elec > 0 || throw(ArgumentError("tol_n_elec must be positive"))
     ham.basis === basis || throw(ArgumentError("Hamiltonian belongs to a different basis"))
-    probes = isnothing(probes) ? StochasticOrbitals(basis; n_samples, seed, sampling) : probes
+    probes = isnothing(probes) ? StochasticOrbitals(basis; n_samples, seed, sampling, probe_comm) : probes
     validate_probes(basis, probes)
     start = time_ns()
     caches = [prepare_cache(backend, ham[ik], probes.vectors[ik],
@@ -113,21 +121,26 @@ function stochastic_density(basis, ham; backend::AbstractFOE=ChebyshevFOE(),
     temperature, occmax = basis.model.temperature, DFTK.filled_occupation(basis.model)
     tρ = time_ns()
     ψ = [filtered_orbitals(cache, εF, temperature, occmax) for cache in caches]
-    occupation = [fill(probes.weights[ik], size(ψk, 2)) for (ik, ψk) in enumerate(ψ)]
+    occupation = [DFTK.to_device(basis.architecture, fill(probes.weights[ik], size(ψk, 2)))
+                  for (ik, ψk) in enumerate(ψ)]
     ρ = DFTK.compute_density(basis, ψ, occupation)
+    reduce_probe_density!(ρ, probes.probe_comm)
     density_seconds = (time_ns() - tρ) * 1e-9
     n_electrons = sum(ρ) * basis.dvol
     abs(n_electrons - chemical.n_electrons) <= max(1e-7, 1e-10 * n_electrons) ||
         error("density integral disagrees with the cached electron count; increase expansion accuracy")
     tE = time_ns()
-    entropy_energy = sum(basis.kweights[ik] * probes.weights[ik] *
+    local_entropy = sum(basis.kweights[ik] * probes.weights[ik] *
                          sum(entropy_samples(cache, εF, temperature, occmax))
                          for (ik, cache) in enumerate(caches))
-    energies = stochastic_energy(basis, ψ, occupation, ρ, entropy_energy)
+    entropy_energy = collective(local_entropy, +, trace_comm(basis, probes))
+    energies = stochastic_energy(basis, ψ, occupation, ρ, entropy_energy;
+                                 probe_comm=probes.probe_comm)
     energy_seconds = (time_ns() - tE) * 1e-9
     timings = (; preparation_seconds, chemical_potential_seconds, density_seconds, energy_seconds,
                 total_seconds=(time_ns() - start) * 1e-9,
-                ham_applications=sum(application_count, caches))
+                ham_applications=collective(sum(application_count, caches), +, trace_comm(basis, probes)),
+                ham_batch_calls=collective(sum(batch_application_count, caches), +, trace_comm(basis, probes)))
     (; ρ, εF, ψ, occupation, n_electrons, energies, entropy_energy,
        internal_energy=energies.total - entropy_energy,
        electron_count_error=n_electrons - basis.model.n_electrons,

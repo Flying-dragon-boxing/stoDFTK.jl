@@ -74,9 +74,11 @@ julia --project=. examples/helium_scf.jl --complete
 
 ## 当前范围
 
-支持 CPU / Float64、单 MPI 进程、多个 k 点、非自旋极化 / spinless / 共线自旋、LDA / GGA、模守恒赝势，以及 Simple / Kerker / Dielectric 混合。暂不支持零温、分布式 MPI、GPU、混合确定性子空间、杂化泛函、需要动能密度的 meta-GGA、力或分子动力学。
+支持 Float64 / ComplexF64、CPU 线程与探针批处理、CPU 的 k 点或探针 MPI、CUDA 与经 CPU 暂存的 GPU 探针 MPI。也支持多个 k 点、非自旋极化 / spinless / 共线自旋、LDA / GGA、调用方提供的模守恒赝势，以及 Simple / Kerker / Dielectric 混合。原生 Libxc GPU 泛函受 CUDA/Libxc 组合限制，本机 CUDA 13.4 不能运行；DFTK 内置泛函可在 GPU basis 上经 CPU 计算交换关联。GPU 的 k 点 MPI、k 点 × 探针二维 MPI、AMD 路径暂不支持。配置和测试记录见 [并行说明](docs/parallelization.md)。
 
-`ψ` 是经过 `sqrt(f(H))` 滤波的随机波函数，`occupation` 是估计器权重，二者可传给 `DFTK.compute_density`。它们不是 KS 本征态和占据数，不能直接用于依赖本征值的 DFTK 后处理。SCF 返回 `ham=H[ρout]`，同时保存用于最后一次滤波的 `ham_input=H[ρin]`；两者的密度差由 `residual_norm` 表示。
+暂不支持零温、混合确定性子空间、杂化泛函、需要动能密度的 meta-GGA、力或分子动力学。
+
+`ψ` 是经过 `sqrt(f(H))` 滤波的随机波函数，`occupation` 是估计器权重，二者可传给 `DFTK.compute_density`；探针 MPI 下还需对探针通信器求和。它们不是 KS 本征态和占据数，不能直接用于依赖本征值的 DFTK 后处理。SCF 返回 `ham=H[ρout]`，同时保存用于最后一次滤波的 `ham_input=H[ρin]`；两者的密度差由 `residual_norm` 表示。
 
 随机 SCF 的残差收敛不等于样本数收敛；自由能含随机及展开误差。熵通过单独的算符迹估计，细节见 [算法说明](docs/method.md)。
 

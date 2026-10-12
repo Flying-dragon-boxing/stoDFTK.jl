@@ -9,9 +9,9 @@ For other matrix-free operators, supply an enclosure explicitly.
 function nonlocal_radius(op)
     # Nonzero eigenvalues of PDP† are those of sqrt(G) D sqrt(G), G=P†P.
     # Only diagonalize in projector space, never in the plane-wave space.
-    P, D = op.P, op.D
+    P, D = op.P, DFTK.to_cpu(op.D)
     iszero(size(P, 2)) && return 0.0
-    gram = eigen(Hermitian(P' * P))
+    gram = eigen(Hermitian(DFTK.to_cpu(P' * P)))
     root = gram.vectors * Diagonal(sqrt.(max.(gram.values, 0.0))) * gram.vectors'
     maximum(abs, eigvals(Hermitian(root * D * root)); init=0.0)
 end
@@ -51,7 +51,7 @@ end
 
 function spectral_bounds(H::AbstractMatrix)
     size(H, 1) == size(H, 2) > 0 || throw(ArgumentError("H must be a nonempty square matrix"))
-    ishermitian(H) || throw(ArgumentError("H must be Hermitian"))
+    matrix_ishermitian(H) || throw(ArgumentError("H must be Hermitian"))
     d = real.(diag(H))
     r = vec(sum(abs, H; dims=2)) - abs.(diag(H))
     widen_bounds(minimum(d - r), maximum(d + r))
@@ -64,15 +64,17 @@ function widen_bounds(lo, hi)
     checked_bounds((lo - padding, hi + padding))
 end
 
-struct ChebyshevCache{H}
+struct ChebyshevCache{H,M<:AbstractMatrix{ComplexF64}}
     ham::H
-    probes::Matrix{ComplexF64}
+    probes::M
     bounds::Tuple{Float64,Float64}
     nodes::Vector{Float64}
     transform::Matrix{Float64}
     moments::Matrix{Float64}
     degree::Int
     ham_applications::Int
+    batch_size::Int
+    ham_batch_calls::Int
 end
 
 function chebyshev_transform(order, quadrature_order, bounds)
@@ -92,24 +94,25 @@ function scaled_hamiltonian!(y, H, x, bounds)
 end
 
 function prepare_cache(backend::ChebyshevFOE, H, probes, supplied_bounds)
-    H isa AbstractMatrix && !ishermitian(H) && throw(ArgumentError("H must be Hermitian"))
+    H isa AbstractMatrix && !matrix_ishermitian(H) && throw(ArgumentError("H must be Hermitian"))
     bounds = isnothing(supplied_bounds) ? spectral_bounds(H) : checked_bounds(supplied_bounds)
     dim, n_samples = size(probes)
     order = 2backend.degree
     moments = zeros(order + 1, n_samples)
-    t0, t1, t2 = (zeros(ComplexF64, dim) for _ in 1:3)
-    for j in 1:n_samples
-        z = @view probes[:, j]
-        copyto!(t0, z)
-        moments[1, j] = real(dot(z, t0))
+    for first_column in 1:backend.batch_size:n_samples
+        columns = first_column:min(first_column + backend.batch_size - 1, n_samples)
+        z = copy(@view probes[:, columns])
+        t0, t1, t2 = copy(z), similar(z), similar(z)
+        norms2 = column_norms2(z)
+        moments[1, columns] = norms2
         scaled_hamiltonian!(t1, H, t0, bounds)
-        moments[2, j] = real(dot(z, t1))
+        moments[2, columns] = column_dots(z, t1)
         for k in 2:order
             scaled_hamiltonian!(t2, H, t1, bounds)
             @. t2 = 2t2 - t0
-            moments[k + 1, j] = real(dot(z, t2))
+            moments[k + 1, columns] = column_dots(z, t2)
             # On [-1,1], ||T_k(H)z|| ≤ ||z||. Check wrong supplied bounds early.
-            norm(t2) <= (1 + 1e-7) * norm(z) ||
+            all(column_norms2(t2) .<= (1 + 1e-7)^2 .* norms2) ||
                 throw(ArgumentError("Chebyshev recurrence escaped the spectral enclosure; widen spectral_bounds"))
             t0, t1, t2 = t1, t2, t0
         end
@@ -117,7 +120,8 @@ function prepare_cache(backend::ChebyshevFOE, H, probes, supplied_bounds)
     all(isfinite, moments) || throw(ArgumentError("non-finite Chebyshev moments"))
     (; nodes, transform) = chebyshev_transform(order, backend.quadrature_order, bounds)
     ChebyshevCache(H, probes, bounds, nodes, transform, moments,
-                   backend.degree, order * n_samples)
+                   backend.degree, order * n_samples, backend.batch_size,
+                   order * cld(n_samples, backend.batch_size))
 end
 
 root_coefficients(cache::ChebyshevCache, μ, temperature, occmax) =
@@ -165,14 +169,18 @@ end
 function filtered_orbitals(cache::ChebyshevCache, μ, temperature, occmax)
     c = root_coefficients(cache, μ, temperature, occmax)
     ψ = similar(cache.probes)
-    for j in axes(ψ, 2)
-        ψ[:, j] = chebyshev_action(cache.ham, @view(cache.probes[:, j]), c, cache.bounds)
+    for first_column in 1:cache.batch_size:size(ψ, 2)
+        columns = first_column:min(first_column + cache.batch_size - 1, size(ψ, 2))
+        ψ[:, columns] = chebyshev_action(cache.ham, @view(cache.probes[:, columns]), c, cache.bounds)
     end
     ψ
 end
 
 application_count(cache::ChebyshevCache) =
     cache.ham_applications + cache.degree * size(cache.probes, 2)
+
+batch_application_count(cache::ChebyshevCache) =
+    cache.ham_batch_calls + cache.degree * cld(size(cache.probes, 2), cache.batch_size)
 
 """
     fermi_operator_action(H, χ, μ, temperature;

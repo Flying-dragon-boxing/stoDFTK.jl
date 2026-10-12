@@ -14,7 +14,7 @@ function physical_density(basis, ρ)
         throw(DimensionMismatch("density must have shape (fft_size..., n_spin_components)"))
     all(isfinite, ρ) || throw(ArgumentError("density must be finite"))
     minimum(ρ) >= -1e-10 || throw(ArgumentError("initial density must be nonnegative"))
-    result = max.(Float64.(ρ), 0.0)
+    result = DFTK.to_device(basis.architecture, max.(Float64.(ρ), 0.0))
     charge = sum(result) * basis.dvol
     charge > 0 || throw(ArgumentError("density must have positive total charge"))
     result .*= basis.model.n_electrons / charge
@@ -46,7 +46,7 @@ function stochastic_scf(basis; backend::AbstractFOE=ChebyshevFOE(),
                          seed::Int=0, sampling::Symbol=:phase, probes=nothing,
                          maxiter::Int=80, tol::Real=1e-5, damping::Real=0.3,
                          mixing=DFTK.SimpleMixing(), callback=identity,
-                         tol_n_elec::Real=1e-8, kwargs...)
+                         tol_n_elec::Real=1e-8, probe_comm=MPI.COMM_SELF, kwargs...)
     validate_basis(basis)
     maxiter > 0 || throw(ArgumentError("maxiter must be positive"))
     isfinite(tol) && tol > 0 || throw(ArgumentError("tol must be positive"))
@@ -54,7 +54,7 @@ function stochastic_scf(basis; backend::AbstractFOE=ChebyshevFOE(),
     mixing isa Union{DFTK.SimpleMixing,DFTK.KerkerMixing,DFTK.DielectricMixing} ||
         throw(ArgumentError("mixing must be SimpleMixing, KerkerMixing or DielectricMixing"))
     haskey(kwargs, :μ) && throw(ArgumentError("SCF solves μ at fixed electron count; do not supply μ"))
-    probes = isnothing(probes) ? StochasticOrbitals(basis; n_samples, seed, sampling) : probes
+    probes = isnothing(probes) ? StochasticOrbitals(basis; n_samples, seed, sampling, probe_comm) : probes
     validate_probes(basis, probes)
     ρin = physical_density(basis, ρ)
     history = NamedTuple[]

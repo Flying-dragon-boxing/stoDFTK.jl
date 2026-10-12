@@ -1,4 +1,4 @@
-function toy_basis(; spin=:spinless, temperature=0.4, kgrid=(3, 1, 1))
+function toy_basis(; spin=:spinless, temperature=0.4, kgrid=(3, 1, 1), comm_kpts=MPI.COMM_WORLD)
     lattice = [6.0 0 0; 0 0 0; 0 0 0]
     terms = [Kinetic(), ExternalFromReal(r -> 0.3cos(2π * r[1] / 6) +
                                             0.1sin(4π * r[1] / 6)),
@@ -6,7 +6,7 @@ function toy_basis(; spin=:spinless, temperature=0.4, kgrid=(3, 1, 1))
     model = Model(lattice; n_electrons=1, terms, temperature,
                   spin_polarization=spin, symmetries=false,
                   disable_electrostatics_check=true)
-    PlaneWaveBasis(model; Ecut=4.0, kgrid)
+    PlaneWaveBasis(model; Ecut=4.0, kgrid, comm_kpts)
 end
 
 function dense_reference(basis, ham)
@@ -40,9 +40,9 @@ end
 
 density_distance(basis, a, b) = norm(a - b) * sqrt(basis.dvol)
 
-function helium_basis()
+function helium_basis(; comm_kpts=MPI.COMM_WORLD, functionals=PBE())
     lattice = 6.0 * Matrix{Float64}(I, 3, 3)
     model = model_DFT(lattice, [ElementCoulomb(:He)], [[0.0, 0.0, 0.0]];
-                      functionals=PBE(), temperature=0.75)
-    PlaneWaveBasis(model; Ecut=1.5, kgrid=(1, 1, 1))
+                      functionals, temperature=0.75)
+    PlaneWaveBasis(model; Ecut=1.5, kgrid=(1, 1, 1), comm_kpts)
 end

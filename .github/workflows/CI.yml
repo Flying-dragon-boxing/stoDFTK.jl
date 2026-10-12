@@ -11,13 +11,33 @@ permissions:
 
 jobs:
   test:
-    name: Julia ${{ matrix.julia-version }}
+    name: Julia ${{ matrix.julia-version }} / ${{ matrix.threads }} threads
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         julia-version: ['1.10', '1']
+        threads: [1]
+        include:
+          - julia-version: '1'
+            threads: 4
+    env:
+      JULIA_CUDA_USE_COMPAT: 'false'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_NUM_THREADS: ${{ matrix.threads }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.julia-version }}
+      - name: Instantiate and test
+        run: julia --color=yes --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+
+  mpi:
+    name: MPI on 2 and 3 ranks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       JULIA_CUDA_USE_COMPAT: 'false'
       OPENBLAS_NUM_THREADS: '1'
@@ -26,6 +46,10 @@ jobs:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v3
         with:
-          version: ${{ matrix.julia-version }}
-      - name: Instantiate and test
-        run: julia --color=yes --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+          version: '1'
+      - name: Instantiate
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: MPI validation
+        run: |
+          julia --project=. test/run_mpi.jl 2
+          julia --project=. test/run_mpi.jl 3

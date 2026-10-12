@@ -11,6 +11,9 @@
 __pycache__/
 .DS_Store
 /Manifest.toml
+/test/gpu/Manifest.toml
+/test/backends/Manifest.toml
+LocalPreferences.toml
 *.upf
 *.UPF
 *.hgh

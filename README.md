@@ -7,7 +7,7 @@ constructs the density from filtered stochastic orbitals, and performs a full
 self-consistent density iteration. The public `main` branch implements the
 Chebyshev backend. Experimental Lanczos development is maintained separately.
 
-[中文说明](README.zh-CN.md) · [Algorithm](docs/method.md) · [Validation](docs/validation.md)
+[中文说明](README.zh-CN.md) · [Algorithm](docs/method.md) · [Parallelization](docs/parallelization.md) · [Validation](docs/validation.md)
 
 ## Installation
 
@@ -86,18 +86,27 @@ potential extrema and a projector-space bound for nonlocal operators.
 
 ## Scope and validation
 
-The implementation supports CPU / Float64, a single MPI process, multiple
+The implementation supports Float64 / ComplexF64, CPU threads, batched probes,
+CPU MPI over k-points or probes, multiple
 k-points, spinless / unpolarized / collinear spin models, LDA / GGA,
 norm-conserving pseudopotential Hamiltonians supplied by the caller, and
 Simple / Kerker / Dielectric density mixing.
 
-Zero temperature, distributed MPI, GPU, deterministic-subspace mixing,
+CUDA uses a DFTK GPU basis and supports host-staged probe MPI. CUDA is an
+optional dependency of the calling project. Native Libxc GPU functionals depend
+on the installed CUDA/Libxc combination; the tested local CUDA 13.4 setup cannot
+run them. DFTK built-in functionals evaluate XC on CPU with a GPU basis.
+GPU k-point MPI, simultaneous k-point/probe MPI and AMDGPU are not validated
+or supported here. See [backend setup and limits](docs/parallelization.md).
+
+Zero temperature, deterministic-subspace mixing,
 hybrid functionals, meta-GGA requiring kinetic energy density, forces and
 molecular dynamics are not implemented.
 
 `result.ψ` contains filtered stochastic orbitals and `result.occupation`
 contains estimator weights. They can reconstruct the density through
-`DFTK.compute_density`, but they are not Kohn–Sham eigenstates or occupation
+`DFTK.compute_density` (followed by a probe-communicator sum in probe MPI), but
+they are not Kohn–Sham eigenstates or occupation
 numbers. `ham=H[ρout]` and `ham_input=H[ρin]` retain the last SCF output and
 filter input, with their difference measured by the reported residual.
 
