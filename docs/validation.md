@@ -23,7 +23,7 @@
 
 ## Chebyshev 后端
 
-此前 158 项检查在 CPU 单线程、四线程和 MKL 四线程环境均通过。新增 meta-GGA 后，CPU 四线程全套 253 项通过；新增的 95 项另在 MKL 四线程环境全部通过。本次功能位于本地 `feature/acceleration` 分支，公开主分支尚未更新；仍只使用 Chebyshev 后端。
+此前 158 项检查在 CPU 单线程、四线程和 MKL 四线程环境均通过。新增 meta-GGA 后，CPU 四线程全套 253 项通过；新增的 95 项另在 MKL 四线程环境全部通过。主分支只使用 Chebyshev 后端，Lanczos 开发保留在独立分支。
 
 | 测试组 | 检查数 |
 |---|---:|
