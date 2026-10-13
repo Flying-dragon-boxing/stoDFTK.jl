@@ -14,15 +14,16 @@
 - 非线性自洽循环及 Simple / Kerker / Dielectric 混合。
 - 无局域势的自由电子 Hamiltonian。
 - 小全电子 He 的 PBE、自动谱界、初始密度和完整基 SCF。
+- r²SCAN 的随机动能密度 `τ`、联合 `ρ/τ` 自洽及含正、负、变号系数的微分算符谱界。
 - 非收敛返回、错误参数、跨 basis 探针及错误谱界。
 
-最终 SCF 用 `H[ρout]` 的完整对角化独立核对密度、化学势和自由能。参考占据由 DFTK 根据完整本征值计算，参考化学势使用足够宽的独立区间求解，避免小高温体系中固定 ±1 Ha 包围区间不足。
+最终 SCF 用 `H[ρout,τout]` 的完整对角化独立核对密度、动能密度、化学势和自由能。参考占据由 DFTK 根据完整本征值计算，参考化学势使用足够宽的独立区间求解，避免小高温体系中固定 ±1 Ha 包围区间不足。
 
 自动原子密度猜测在粗 Fourier 网格上可能出现负值；SCF 将自动猜测投影为非负初始密度。显式用户输入仍校验非负性，输出随机密度不做电子数重标定。
 
-## Chebyshev 主分支
+## Chebyshev 后端
 
-CPU 单线程和四线程，以及 MKL 四线程环境均全部通过，共 158 项检查。主分支只实现 Chebyshev 后端。
+此前 158 项检查在 CPU 单线程、四线程和 MKL 四线程环境均通过。新增 meta-GGA 后，CPU 四线程全套 253 项通过；新增的 95 项另在 MKL 四线程环境全部通过。本次功能位于本地 `feature/acceleration` 分支，公开主分支尚未更新；仍只使用 Chebyshev 后端。
 
 | 测试组 | 检查数 |
 |---|---:|
@@ -33,11 +34,30 @@ CPU 单线程和四线程，以及 MKL 四线程环境均全部通过，共 158 
 | 自由电子模型 | 4 |
 | 小全电子 He PBE 集成 | 8 |
 | 批量与逐探针对照、批量 SCF | 40 |
-| 合计 | 158 |
+| DivAgrad 正、负、变号系数的谱界 | 18 |
+| 小全电子 He r²SCAN 集成 | 6 |
+| meta-GGA 密度、动能密度和参数校验 | 32 |
+| meta-GGA 联合自洽与混合 | 39 |
+| 合计 | 253 |
 
 He：平面波维数 19，Chebyshev `degree=100`，完整基，阻尼 0.5，密度容差 `1e-7`；独立验证中 24 轮收敛，残差 `7.4346884e-8`。最终自由能与输出 Hamiltonian 的完整对角化参考之差为 `7.4374116e-9 Ha`。
 
 `examples/helium_scf.jl` 的 64 个随机相位样本在 21 轮收敛，电子数 `2.000000002468197`，密度残差 `6.0547205e-7`，满足示例的 `1e-6` 容差。探针种子规则已改为物理 k 点和全局探针编号，以保持不同 MPI 分区下的样本一致；固定 seed 的样本与初始串行版本不同。
+
+## meta-GGA 验证
+
+同一组 `sqrt(f(H))` 滤波轨道生成 `ρ` 和 `τ`。固定 Hamiltonian 测试覆盖多 k 点、非自旋极化 / 共线自旋、完整基和随机相位样本，并核对 `∫τ = Ekin`、随机可复现性和批量一致性。联合 SCF 覆盖 Simple / Kerker / Dielectric 混合，并确认只有密度残差达标而动能密度残差未达标时不会返回收敛。
+
+19 维 He/r²SCAN 完整基以 `degree=150`、阻尼 0.5、`tol=tol_tau=1e-7` 在 60 轮收敛：密度残差 `2.15e-9`，动能密度残差 `5.13e-8`，自由能与最终输出 Hamiltonian 完整对角化参考相差 `1.30e-8 Ha`。32 个随机相位探针的 `examples/metagga_scf.jl` 在 56 轮满足 `1e-6` 容差，两个残差分别为 `2.58e-8` 和 `8.20e-7`。这两个计算采用相同粗离散化，随机结果包含采样误差。
+
+| meta-GGA 路径 | 检查数 | 结果 |
+|---|---:|---|
+| CPU / MKL | 新增 95 | 谱界、`ρ/τ`、能量、联合 SCF 均通过 |
+| CPU MPI，2 进程 | 每进程 38 | k 点分配、探针分配及联合 SCF 通过 |
+| 原生 CUDA Libxc | 16 | 完整基和随机样本与 CPU 对照通过 |
+| GPU 探针 MPI，2 进程 | 每进程新增 9 | 空探针分区、全局 `τ`、能量及联合 SCF 通过 |
+
+GPU 检查使用原生 Libxc r²SCAN，禁用标量回退。GPU MPI 的原有 11 项也再次通过，合计每进程 20 项。验证未使用赝势文件或大体系完整基。
 
 ## MPI 和 CUDA
 
@@ -82,6 +102,9 @@ CPU 各批次与逐探针对照的密度和能量差在本次记录中为零；C
 ```sh
 JULIA_CUDA_USE_COMPAT=false OPENBLAS_NUM_THREADS=1 \
   julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+julia --project=. examples/metagga_scf.jl
+julia --project=. test/run_mpi.jl 2 test/meta_mpi.jl
+julia --project=test/gpu test/gpu/metagga.jl
 ```
 
 测试时设置 `JULIA_CUDA_USE_COMPAT=false` 跳过 CPU 验证不需要的 CUDA 兼容驱动探测。DFTK 的 MPI 库在单进程加载时也会初始化本机通信，本次在允许本机通信的环境中运行。

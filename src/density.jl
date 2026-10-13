@@ -59,11 +59,12 @@ function solve_chemical_potential(basis, caches, probes; tol_n_elec, maxiter=100
     error("chemical-potential solve did not meet electron-count tolerance $tol_n_elec")
 end
 
-function stochastic_energy(basis, ψ, occupation, ρ, entropy_energy; probe_comm=MPI.COMM_SELF)
+function stochastic_energy(basis, ψ, occupation, ρ, entropy_energy;
+                            τ=nothing, probe_comm=MPI.COMM_SELF)
     names, values = String[], Float64[]
     for (term_type, term) in zip(basis.model.term_types, basis.terms)
         name = string(nameof(typeof(term_type)))
-        value = name == "Entropy" ? entropy_energy : DFTK.energy(term, basis, ψ, occupation; ρ)
+        value = name == "Entropy" ? entropy_energy : DFTK.energy(term, basis, ψ, occupation; ρ, τ)
         if name in ("Kinetic", "AtomicNonlocal")
             value = collective(value, +, probe_comm)
         end
@@ -89,7 +90,9 @@ spin channels, k-point weights and density symmetrization. Unless `μ` is given,
 solve the electron count with the *same probes and same squared filter*.
 No rescaling of the output density is performed.
 
-Returns `ρ`, `εF`, `ψ` (filtered stochastic orbitals), `occupation` (estimator
+For meta-GGAs, construct kinetic density `τ = ½Σ_k w_k ⟨|(∇+ik)ψ_k|²⟩`
+from the same filtered probes. Probe MPI globally sums both estimators.
+Returns `ρ`, `τ` (`nothing` for models not requiring it), `εF`, `ψ` (filtered stochastic orbitals), `occupation` (estimator
 weights, not KS occupations), `n_electrons`, `energies`, `entropy_energy`,
 `bounds`, `probes`, and `timings`. `energies.total` is the Mermin free energy;
 entropy is a separate trace approximation. `ψ` are not KS eigenstates.
@@ -125,6 +128,12 @@ function stochastic_density(basis, ham; backend::AbstractFOE=ChebyshevFOE(),
                   for (ik, ψk) in enumerate(ψ)]
     ρ = DFTK.compute_density(basis, ψ, occupation)
     reduce_probe_density!(ρ, probes.probe_comm)
+    τ = if needs_tau(basis)
+        value = DFTK.compute_kinetic_energy_density(basis, ψ, occupation)
+        reduce_probe_density!(value, probes.probe_comm)
+    else
+        nothing
+    end
     density_seconds = (time_ns() - tρ) * 1e-9
     n_electrons = sum(ρ) * basis.dvol
     abs(n_electrons - chemical.n_electrons) <= max(1e-7, 1e-10 * n_electrons) ||
@@ -135,13 +144,13 @@ function stochastic_density(basis, ham; backend::AbstractFOE=ChebyshevFOE(),
                          for (ik, cache) in enumerate(caches))
     entropy_energy = collective(local_entropy, +, trace_comm(basis, probes))
     energies = stochastic_energy(basis, ψ, occupation, ρ, entropy_energy;
-                                 probe_comm=probes.probe_comm)
+                                 τ, probe_comm=probes.probe_comm)
     energy_seconds = (time_ns() - tE) * 1e-9
     timings = (; preparation_seconds, chemical_potential_seconds, density_seconds, energy_seconds,
                 total_seconds=(time_ns() - start) * 1e-9,
                 ham_applications=collective(sum(application_count, caches), +, trace_comm(basis, probes)),
                 ham_batch_calls=collective(sum(batch_application_count, caches), +, trace_comm(basis, probes)))
-    (; ρ, εF, ψ, occupation, n_electrons, energies, entropy_energy,
+    (; ρ, τ, εF, ψ, occupation, n_electrons, energies, entropy_energy,
        internal_energy=energies.total - entropy_energy,
        electron_count_error=n_electrons - basis.model.n_electrons,
        chemical_potential_iterations=chemical.n_iter,

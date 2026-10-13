@@ -9,6 +9,15 @@ function toy_basis(; spin=:spinless, temperature=0.4, kgrid=(3, 1, 1), comm_kpts
     PlaneWaveBasis(model; Ecut=4.0, kgrid, comm_kpts)
 end
 
+function metagga_basis(; spin=:none, kgrid=(3,1,1), comm_kpts=MPI.COMM_WORLD,
+                        functionals=[:mgga_x_r2scan, :mgga_c_r2scan])
+    lattice = [6.0 0 0; 0 0 0; 0 0 0]
+    terms = [Kinetic(), ExternalFromReal(r -> 0.15cos(2π*r[1]/6)), Xc(functionals), Entropy()]
+    model = Model(lattice; n_electrons=1, terms, temperature=0.75,
+                  spin_polarization=spin, symmetries=false, disable_electrostatics_check=true)
+    PlaneWaveBasis(model; Ecut=2.0, kgrid, comm_kpts)
+end
+
 function dense_reference(basis, ham)
     eigensystems = map(eachindex(basis.kpoints)) do ik
         dim = size(ham[ik], 1)
@@ -34,8 +43,9 @@ function dense_reference(basis, ham)
     end
     occupation = DFTK.compute_occupation(basis, eigenvalues, εF).occupation
     ρ = DFTK.compute_density(basis, ψ, occupation)
-    energies = DFTK.energy(basis, ψ, occupation; ρ, eigenvalues, εF).energies
-    (; ψ, occupation, εF, ρ, energies, eigenvalues)
+    τ = any(DFTK.needs_τ, basis.terms) ? DFTK.compute_kinetic_energy_density(basis, ψ, occupation) : nothing
+    energies = DFTK.energy(basis, ψ, occupation; ρ, τ, eigenvalues, εF).energies
+    (; ψ, occupation, εF, ρ, τ, energies, eigenvalues)
 end
 
 density_distance(basis, a, b) = norm(a - b) * sqrt(basis.dvol)

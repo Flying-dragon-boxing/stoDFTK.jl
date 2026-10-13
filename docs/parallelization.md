@@ -39,13 +39,14 @@ result = stochastic_scf(basis; n_samples=64, seed=2026, probe_comm=MPI.COMM_WORL
 
 所有进程均调用 SCF，并使用相同模型、参数和种子。第二种方式的 `n_samples=64` 表示**所有进程合计 64 个样本**。探针按全局编号生成，改变进程数不会改变样本。进程可以分到零个探针。
 
-化学势、谱界、熵和轨道能量需要相应的全局规约。密度依赖项只计算一次全局密度的能量。`result.ρ` 是全局密度；在探针 MPI 下，`result.ψ` 和 `occupation` 是本进程的列，单独调用 `DFTK.compute_density` 后仍需对探针通信器求和。
+化学势、谱界、熵和轨道能量需要相应的全局规约。密度依赖项只计算一次全局密度的能量。`result.ρ` 和 meta-GGA 的 `result.τ` 都是全局场；在探针 MPI 下，`result.ψ` 和 `occupation` 是本进程的列，单独调用 `DFTK.compute_density` 或 `DFTK.compute_kinetic_energy_density` 后仍需对探针通信器求和。
 
 使用 `MPI.mpiexec()` 选择与 MPI.jl 实际加载库匹配的启动器，避免系统 OpenMPI 与 Julia MPICH 混用。验证入口：
 
 ```sh
 julia --project=. test/run_mpi.jl 2
 julia --project=. test/run_mpi.jl 3
+julia --project=. test/run_mpi.jl 2 test/meta_mpi.jl
 ```
 
 ## NVIDIA CUDA
@@ -81,6 +82,7 @@ GPU 的 k 点 MPI 暂不支持。探针 MPI 使用复制 GPU basis，并经 CPU 
 ```sh
 julia --project=test/gpu -e 'using Pkg; Pkg.develop(path=pwd()); Pkg.instantiate()'
 julia --project=test/gpu test/gpu/runtests.jl
+julia --project=test/gpu test/gpu/metagga.jl
 julia --project=test/gpu test/run_mpi.jl 2 test/gpu/mpi.jl
 ```
 

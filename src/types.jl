@@ -93,7 +93,6 @@ function validate_basis(basis)
     isnothing(basis.model.εF) ||
         throw(ArgumentError("use a fixed-electron-count DFTK model; pass μ to stochastic_density for fixed-H work"))
     basis.model.n_electrons > 0 || throw(ArgumentError("n_electrons must be positive"))
-    # Orbital-dependent functionals need a separate SCF formulation.
     allowed = (:Kinetic, :AtomicLocal, :AtomicNonlocal, :Ewald, :PspCorrection,
                :Hartree, :Xc, :Entropy, :ExternalFromReal, :ExternalFromFourier,
                :ExternalFromValues, :LocalNonlinearity)
@@ -101,13 +100,10 @@ function validate_basis(basis)
         nameof(typeof(term)) in allowed ||
             throw(ArgumentError("unsupported model term $(nameof(typeof(term)))"))
     end
-    for term in basis.terms
-        if term isa DFTK.TermXc && DFTK.needs_τ(term)
-            throw(ArgumentError("meta-GGA requiring kinetic energy density is not supported"))
-        end
-    end
     nothing
 end
+
+needs_tau(basis) = any(DFTK.needs_τ, basis.terms)
 
 function validate_probes(basis, probes)
     probes.basis === basis || throw(ArgumentError("probes were generated for a different basis"))

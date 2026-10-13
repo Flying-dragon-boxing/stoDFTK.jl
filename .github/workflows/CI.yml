@@ -53,3 +53,4 @@ jobs:
         run: |
           julia --project=. test/run_mpi.jl 2
           julia --project=. test/run_mpi.jl 3
+          julia --project=. test/run_mpi.jl 2 test/meta_mpi.jl

@@ -84,12 +84,26 @@ chemical potential fixed, or `spectral_bounds=(emin, emax)` to provide a
 spectral enclosure explicitly. Automatic bounds use the kinetic and local
 potential extrema and a projector-space bound for nonlocal operators.
 
+## Meta-GGA
+
+Models requiring kinetic energy density use the same filtered probes to build
+both `ρ` and `τ`. For example, select
+`functionals=[:mgga_x_r2scan, :mgga_c_r2scan]` in `model_DFT`, then call
+`stochastic_scf(basis; tol=1e-6, tol_tau=1e-6)`. Convergence requires both
+unmixed residuals. Results include `τ`, `τin`, `residual_tau` and `history_Δτ`;
+models not requiring it return `τ=nothing`.
+
+Initial and mixed inputs are projected to `τ≥τW(ρ)`. The orbital-derived
+output estimators are preserved. Automatic spectral bounds include the
+meta-GGA differential operator. The small all-electron r²SCAN example is
+`julia --project=. examples/metagga_scf.jl` (`--complete` for a tiny reference).
+
 ## Scope and validation
 
 The implementation supports Float64 / ComplexF64, CPU threads, batched probes,
 CPU MPI over k-points or probes, multiple
-k-points, spinless / unpolarized / collinear spin models, LDA / GGA,
-norm-conserving pseudopotential Hamiltonians supplied by the caller, and
+k-points, spinless / unpolarized / collinear spin models, LDA / GGA / meta-GGA,
+CPU norm-conserving pseudopotential Hamiltonians supplied by the caller, and
 Simple / Kerker / Dielectric density mixing.
 
 CUDA uses a DFTK GPU basis and supports host-staged probe MPI. CUDA is an
@@ -101,15 +115,15 @@ GPU k-point MPI, simultaneous k-point/probe MPI and AMDGPU are not validated
 or supported here. See [backend setup and limits](docs/parallelization.md).
 
 Zero temperature, deterministic-subspace mixing,
-hybrid functionals, meta-GGA requiring kinetic energy density, forces and
+hybrid functionals, forces and
 molecular dynamics are not implemented.
 
 `result.ψ` contains filtered stochastic orbitals and `result.occupation`
 contains estimator weights. They can reconstruct the density through
 `DFTK.compute_density` (followed by a probe-communicator sum in probe MPI), but
 they are not Kohn–Sham eigenstates or occupation
-numbers. `ham=H[ρout]` and `ham_input=H[ρin]` retain the last SCF output and
-filter input, with their difference measured by the reported residual.
+numbers. `ham=H[ρout,τout]` and `ham_input=H[ρin,τin]` retain the last SCF
+output and filter input, with both differences measured by the reported residuals.
 
 SCF residual convergence must be distinguished from expansion-order and
 sample-count convergence. See the [validation record](docs/validation.md)

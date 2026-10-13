@@ -29,3 +29,29 @@ DFTK.disable_threading()
     @test density_distance(cpu, reference.ρ, Array(result.ρ)) < 1e-6
     @test reference.energies.total ≈ result.energies.total atol=1e-6
 end
+
+@testset "CUDA meta-GGA probe MPI" begin
+    cpu = metagga_basis(; kgrid=(1,1,1), comm_kpts=MPI.COMM_SELF)
+    gpu = PlaneWaveBasis(cpu.model; Ecut=cpu.Ecut, kgrid=cpu.kgrid,
+                         architecture=DFTK.GPU(CuArray), comm_kpts=MPI.COMM_SELF)
+    backend = ChebyshevFOE(; degree=120)
+    ρ = stoDFTK.physical_density(cpu, stoDFTK.default_density(cpu))
+    τ = stoDFTK.physical_tau(cpu, ρ, nothing)
+    cpu_ham = DFTK.Hamiltonian(cpu; ρ, τ)
+    gpu_ham = DFTK.Hamiltonian(gpu; ρ=CuArray(ρ), τ=CuArray(τ))
+    for n_samples in (1,7)
+        reference = stochastic_density(cpu, cpu_ham; backend, n_samples, seed=92)
+        result = stochastic_density(gpu, gpu_ham; backend, n_samples, seed=92,
+                                     probe_comm=MPI.COMM_WORLD)
+        @test result.τ isa CuArray
+        @test density_distance(cpu, reference.τ, Array(result.τ)) < 1e-8
+        @test result.energies.total ≈ reference.energies.total atol=1e-7
+    end
+    reference = stochastic_scf(cpu; backend, n_samples=7, seed=92, damping=0.4,
+                               tol=1e-7, tol_tau=1e-7, maxiter=100)
+    result = stochastic_scf(gpu; backend, n_samples=7, seed=92, damping=0.4,
+                            tol=1e-7, tol_tau=1e-7, maxiter=100, probe_comm=MPI.COMM_WORLD)
+    @test reference.converged && result.converged
+    @test density_distance(cpu, reference.τ, Array(result.τ)) < 1e-7
+    @test result.energies.total ≈ reference.energies.total atol=1e-7
+end

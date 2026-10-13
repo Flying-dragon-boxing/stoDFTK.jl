@@ -72,13 +72,24 @@ julia --project=. examples/helium_scf.jl --complete
 
 该全电子 He 示例使用解析库仑原子、Γ 点和 `Ecut=1.5 Ha`，旨在验证 PBE 和 SCF 接口；该截断**不代表物理量收敛**。
 
+## meta-GGA
+
+模型可使用 `functionals=[:mgga_x_r2scan,:mgga_c_r2scan]`。同一组滤波随机轨道同时生成 `ρ、τ`，自洽迭代由 `tol` 和 `tol_tau` 分别控制未混合残差，两者都满足才收敛。结果包含 `τ、τin、residual_tau、history_Δτ`；不需要动能密度的模型返回 `τ=nothing`。
+
+自动谱界包含 meta-GGA 微分算符。初始和混合输入投影至 `τ≥τW(ρ)`，轨道生成的输出估计器保持原值。小全电子 r²SCAN 示例：
+
+```sh
+julia --project=. examples/metagga_scf.jl
+julia --project=. examples/metagga_scf.jl --complete
+```
+
 ## 当前范围
 
 支持 Float64 / ComplexF64、CPU 线程与探针批处理、CPU 的 k 点或探针 MPI、CUDA 与经 CPU 暂存的 GPU 探针 MPI。也支持多个 k 点、非自旋极化 / spinless / 共线自旋、LDA / GGA、CPU 上调用方提供的模守恒赝势，以及 Simple / Kerker / Dielectric 混合。清除下载代理后，原生 GPU Libxc PBE 已在预编译 CUDA 13.3 环境通过 SCF 验证；最初本地 CUDA 13.4 的 `local=true` 配置会禁用 Libxc GPU 预编译包。DFTK 内置泛函也可在 GPU basis 上经 CPU 计算交换关联。GPU 的 k 点 MPI、k 点 × 探针二维 MPI、GPU 赝势和 AMD 路径尚未支持或验证。配置和测试记录见 [并行说明](docs/parallelization.md)。
 
-暂不支持零温、混合确定性子空间、杂化泛函、需要动能密度的 meta-GGA、力或分子动力学。
+支持需要动能密度的 meta-GGA，已验证 r²SCAN 的 CPU、原生 CUDA 和 MPI 路径。暂不支持零温、混合确定性子空间、杂化泛函、力或分子动力学。
 
-`ψ` 是经过 `sqrt(f(H))` 滤波的随机波函数，`occupation` 是估计器权重，二者可传给 `DFTK.compute_density`；探针 MPI 下还需对探针通信器求和。它们不是 KS 本征态和占据数，不能直接用于依赖本征值的 DFTK 后处理。SCF 返回 `ham=H[ρout]`，同时保存用于最后一次滤波的 `ham_input=H[ρin]`；两者的密度差由 `residual_norm` 表示。
+`ψ` 是经过 `sqrt(f(H))` 滤波的随机波函数，`occupation` 是估计器权重，二者可传给 `DFTK.compute_density`；探针 MPI 下还需对探针通信器求和。它们不是 KS 本征态和占据数，不能直接用于依赖本征值的 DFTK 后处理。SCF 返回 `ham=H[ρout,τout]`，同时保存用于最后一次滤波的 `ham_input=H[ρin,τin]`；两个场的残差分别由 `residual_norm` 和 `residual_tau` 表示，LDA/GGA 的 `τ` 为 `nothing`。
 
 随机 SCF 的残差收敛不等于样本数收敛；自由能含随机及展开误差。熵通过单独的算符迹估计，细节见 [算法说明](docs/method.md)。
 

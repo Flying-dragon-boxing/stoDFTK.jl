@@ -2,7 +2,8 @@
     spectral_bounds(H)
 
 Conservative spectral enclosure. For DFTK's standard DFT Hamiltonian use extrema
-of the kinetic and local potentials, plus a norm bound on `P D P†`.
+of the kinetic and local potentials, plus a norm bound on `P D P†` and a
+quadratic-form bound for meta-GGA `-½∇·A∇` terms.
 Dense matrices use Gershgorin bounds. No full Hamiltonian diagonalization is used.
 For other matrix-free operators, supply an enclosure explicitly.
 """
@@ -17,7 +18,6 @@ function nonlocal_radius(op)
 end
 
 function spectral_bounds(H::DFTK.DftHamiltonianBlock)
-    isnothing(H.divAgrad_op) || throw(ArgumentError("divAgrad operators are not supported"))
     kinetic = H.fourier_op.multiplier
     potential = H.local_op.potential
     radius = if isnothing(H.nonlocal_op)
@@ -25,8 +25,18 @@ function spectral_bounds(H::DFTK.DftHamiltonianBlock)
     else
         nonlocal_radius(H.nonlocal_op)
     end
-    widen_bounds(minimum(kinetic) + minimum(potential) - radius,
-                 maximum(kinetic) + maximum(potential) + radius)
+    dlo, dhi = isnothing(H.divAgrad_op) ? (0.0, 0.0) : divagrad_bounds(H.divAgrad_op)
+    widen_bounds(minimum(kinetic) + minimum(potential) - radius + dlo,
+                 maximum(kinetic) + maximum(potential) + radius + dhi)
+end
+
+function divagrad_bounds(op::DFTK.DivAgradOperator)
+    # <u,-½∇·A∇u> = ½∫A|∇u|². In the finite PW subspace, the
+    # gradient norm is bounded by max_G |G+k|²; A may have either sign.
+    vectors = DFTK.to_cpu(DFTK.Gplusk_vectors_cart(op.basis, op.kpoint))
+    kmax = maximum(p -> sum(abs2, p) / 2, vectors)
+    amin, amax = minimum(op.A), maximum(op.A)
+    (min(0.0, amin) * kmax, max(0.0, amax) * kmax)
 end
 
 function spectral_bounds(H::DFTK.GenericHamiltonianBlock)
@@ -42,6 +52,10 @@ function spectral_bounds(H::DFTK.GenericHamiltonianBlock)
             radius = nonlocal_radius(op)
             lo -= radius
             hi += radius
+        elseif op isa DFTK.DivAgradOperator
+            dlo, dhi = divagrad_bounds(op)
+            lo += dlo
+            hi += dhi
         elseif !(op isa DFTK.NoopOperator)
             throw(ArgumentError("no automatic enclosure for $(typeof(op)); supply spectral_bounds"))
         end
