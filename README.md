@@ -5,7 +5,7 @@ Stochastic wavefunction density-functional theory built on [DFTK.jl](https://git
 stoDFTK approximates the square root of the finite-temperature Fermi operator,
 constructs the density from filtered stochastic orbitals, and performs a full
 self-consistent density iteration. The public `main` branch implements the
-Chebyshev backend. Experimental Lanczos development is maintained separately.
+Chebyshev backend. 
 
 [中文说明](README.zh-CN.md) · [Algorithm](docs/method.md) · [Parallelization](docs/parallelization.md) · [Validation](docs/validation.md)
 
